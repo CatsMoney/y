@@ -1,10 +1,11 @@
-/// yt-backend-cleaner.js
+// yt-adblock-inject.js
 (function() {
     'use strict';
 
+    // ==========================================
+    // УТИЛИТЫ
+    // ==========================================
     const noop = () => {};
-    
-    // Безопасный прокси для бесконечных чейн-вызовов (obj.func().func2())
     const safeProxy = new Proxy({}, {
         get: (target, prop) => {
             if (prop === 'then') return undefined;
@@ -16,86 +17,104 @@
     // 1. НЕЙТРАЛИЗАЦИЯ РЕКЛАМНЫХ API (Lidar / IMA)
     // ==========================================
     const defuseGlobalAPI = () => {
-        if (!window.g) window.g = {};
-        
-        // Глушим точку входа VAST-событий Goog_AdSense_Lidar
+        window.g = window.g || {};
         window.g.lP = noop;
 
-        // Перехватываем функцию g.hc (регистратор глобальных API)
-        // Если YouTube пытается зарегистрировать Lidar или IMA, мы подсовываем пустышку
         const originalHc = window.g.hc;
         window.g.hc = function(name, callback) {
             if (name && (name.includes('Lidar') || name.includes('ima.') || name.includes('ytads'))) {
-                return originalHc ? originalHc.call(window.g, name, () => safeProxy) : safeProxy;
+                return typeof originalHc === 'function'
+                    ? originalHc.call(window.g, name, () => safeProxy)
+                    : safeProxy;
             }
-            return originalHc ? originalHc.apply(this, arguments) : callback;
+            return typeof originalHc === 'function'
+                ? originalHc.apply(this, arguments)
+                : callback;
         };
+
+        // Дополнительно: глушим google.ima
+        window.google = window.google || {};
+        window.google.ima = safeProxy;
     };
 
     // ==========================================
-    // 2. ОБМАН ANTI-ADBLOCK (Пункт 8)
+    // 2. ОБХОД ANTI-ADBLOCK
     // ==========================================
     const bypassAntiAdblock = () => {
-        // Симулируем успешную загрузку ad_status.js с doubleclick.net
         if (window.Cyu) window.Cyu = () => Promise.resolve();
-        if (window.eE) window.eE = () => "ALLOWED"; // Говорим, что блокировщик не обнаружен
-        window.q6 = true; // Выставляем флаг успешного завершения проверки
-        window.DCLKSTAT = 1; 
+        if (window.eE) window.eE = () => "ALLOWED";
+        window.q6 = true;
+        window.DCLKSTAT = 1;
     };
 
     // ==========================================
-    // 3. ПОЛНАЯ СЛЕПОТА ТРЕКЕРОВ (Viewability / IntersectionObserver)
+    // 3. БЛОКИРОВКА ОТСЛЕЖИВАНИЯ ВИДИМОСТИ
     // ==========================================
     const blindViewability = () => {
-        // Ослепляем классы отслеживания видимости
         if (window.vt) window.vt = safeProxy;
         if (window.or) window.or = () => safeProxy;
-        
+
         if (window.Zoo) {
-            window.Zoo = class { 
-                constructor() { this.LT = () => safeProxy; this.Wb = {}; this.dW = noop; } 
+            window.Zoo = class {
+                constructor() {
+                    this.LT = () => safeProxy;
+                    this.Wb = {};
+                    this.dW = noop;
+                }
             };
         }
-        if (window.FDL) window.FDL = class { constructor() { this.g1 = 0; this.hg = false; } };
 
-        // Перехватываем нативный IntersectionObserver, чтобы он думал, что реклама ВСЕГДА скрыта (0% видимости)
+        if (window.FDL) {
+            window.FDL = class {
+                constructor() { this.g1 = 0; this.hg = false; }
+            };
+        }
+
+        // Перехват IntersectionObserver для обнуления видимости рекламы
         const OriginalObserver = window.IntersectionObserver;
-        window.IntersectionObserver = class extends OriginalObserver {
-            constructor(callback, options) {
-                super((entries, observer) => {
-                    // Модифицируем записи: делаем их невидимыми, чтобы триггеры показов рекламы не срабатывали
-                    const mockedEntries = entries.map(entry => Object.create(entry, {
-                        isIntersecting: { value: false },
-                        intersectionRatio: { value: 0 }
-                    }));
-                    callback(mockedEntries, observer);
-                }, options);
-            }
-        };
+        if (OriginalObserver) {
+            window.IntersectionObserver = class extends OriginalObserver {
+                constructor(callback, options) {
+                    super((entries, observer) => {
+                        const mockedEntries = entries.map(entry =>
+                            Object.create(entry, {
+                                isIntersecting: { value: false },
+                                intersectionRatio: { value: 0 }
+                            })
+                        );
+                        callback(mockedEntries, observer);
+                    }, options);
+                }
+            };
+        }
     };
 
     // ==========================================
-    // 4. МГНОВЕННЫЙ ПРОПУСК СЛОТОВ И ОТВЕТОВ
+    // 4. МГНОВЕННЫЙ ПРОПУСК РЕКЛАМНЫХ СЛОТОВ
     // ==========================================
     const fastPassAdsFlow = () => {
-        // Имитируем, что сервер прислал 0 рекламных блоков
         if (window.Ody) window.Ody = () => [];
         if (window.Cx) window.Cx = () => [];
         if (window.aZA) window.aZA = () => true;
 
-        // Отключаем клик-трекеры ytp-ad-has-logging-urls
-        if (window.rFy) window.rFy = class { constructor() { this.logVisibility = noop; this.logClick = noop; } };
-        if (window.Q7e) window.Q7e = noop;
-
-        // Жизненный цикл рекламы: говорим плееру, что реклама УЖЕ закончилась
-        if (window.h5) {
-            window.h5 = class {
-                constructor() { this.scheduled = false; }
-                Au() { return Promise.resolve(); } // Мгновенный триггер на выход из слота
+        if (window.rFy) {
+            window.rFy = class {
+                constructor() {
+                    this.logVisibility = noop;
+                    this.logClick = noop;
+                }
             };
         }
 
-        // Заглушки для функций управления потоком плеера
+        if (window.Q7e) window.Q7e = noop;
+
+        if (window.h5) {
+            window.h5 = class {
+                constructor() { this.scheduled = false; }
+                Au() { return Promise.resolve(); }
+            };
+        }
+
         const instantResolve = () => Promise.resolve({ status: 'success' });
         window.M5x = instantResolve;
         window.nCp = instantResolve;
@@ -104,22 +123,21 @@
     };
 
     // ==========================================
-    // 5. ПОДАВЛЕНИЕ СЕТЕВЫХ ПИНГОВ (Image / sendBeacon / Fetch)
+    // 5. ПОДАВЛЕНИЕ СЕТЕВЫХ ПИНГОВ
     // ==========================================
     const muteNetworkPings = () => {
-        // Блокируем g.ES (отправка пингов через Image/sendBeacon)
         if (window.g) {
-            window.g.ES = () => true; // Возвращаем true, типа отправлено успешно
+            window.g.ES = () => true;
             if (window.g.yJ) window.g.yJ = noop;
             if (window.g.vA) window.g.vA = () => Promise.resolve({});
-            if (window.g.mh) window.g.mh = () => ({}); 
+            if (window.g.mh) window.g.mh = () => ({});
         }
 
         if (window.RFe) window.RFe = async () => ({ status: 'success', skipped: true });
         if (window.LLe) window.LLe = () => Promise.resolve({});
 
-        // Отключаем офлайн-логирование в IndexedDB
         window.ayH = safeProxy;
+
         if (window.ui6) {
             window.ui6 = class {
                 writeThenSend() { return Promise.resolve(); }
@@ -130,20 +148,139 @@
     };
 
     // ==========================================
-    // ТОЧКА ИНИЦИАЛИЗАЦИИ
+    // 6. ПРИНУДИТЕЛЬНЫЙ ВЫХОД ИЗ РЕКЛАМЫ (CSS + DOM)
     // ==========================================
-    const init = () => {
-        defuseGlobalAPI();
-        bypassAntiAdblock();
-        blindViewability();
-        fastPassAdsFlow();
-        muteNetworkPings();
+    const forceVideoMode = () => {
+        try {
+            const player = document.querySelector('#movie_player');
+            if (!player || typeof player.stopVideo !== 'function') return;
+
+            // Метод 1: программный выход
+            if (typeof player.isAdShowing === 'function' && player.isAdShowing()) {
+                player.stopVideo();
+                player.playVideo();
+            }
+
+            // Метод 2: клик по кнопке пропуска, если она есть
+            const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button');
+            if (skipBtn) {
+                skipBtn.click();
+            }
+
+            // Метод 3: закрытие баннерной рекламы
+            const closeBtn = document.querySelector('.ytp-ad-overlay-close-button');
+            if (closeBtn) {
+                closeBtn.click();
+            }
+        } catch (e) {
+            // Игнорируем ошибки, если плеер ещё не готов
+        }
     };
 
-    // Запуск на опережение
-    init();
-    document.addEventListener('DOMContentLoaded', init);
-    window.addEventListener('load', init);
+    // ==========================================
+    // 7. CSS-БЛОКИРОВКА ВИЗУАЛЬНЫХ ЭЛЕМЕНТОВ
+    // ==========================================
+    const injectStyles = () => {
+        const style = document.createElement('style');
+        style.textContent = `
+            .ad-showing,
+            .ad-interrupting,
+            .ytp-ad-module,
+            .ytp-ad-player-overlay,
+            .ytp-ad-player-overlay-layout,
+            .ytp-ad-image-overlay,
+            .ytp-ad-text-overlay,
+            .video-ads,
+            .ytp-ad-progress-list,
+            #player-ads,
+            #masthead-ad,
+            #offer-module,
+            ytd-display-ad-renderer,
+            ytd-companion-slot-renderer,
+            ytd-action-companion-ad-renderer,
+            ytd-video-masthead-ad-advertiser-info-renderer,
+            ytd-in-feed-ad-layout-renderer,
+            ytd-ad-slot-renderer,
+            .ytd-display-ad-renderer,
+            .ytd-companion-slot-renderer,
+            .ytd-action-companion-ad-renderer,
+            .ytd-in-feed-ad-layout-renderer,
+            ytd-banner-promo-renderer {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                height: 0 !important;
+                width: 0 !important;
+                pointer-events: none !important;
+                position: absolute !important;
+                z-index: -9999 !important;
+            }
 
-    console.log('uBO Inject: YouTube Backend Cleaner Active (V2 - Ultra Fast, Anti-Adblock Bypassed)');
+            /* Скрываем серый фон заставки рекламы */
+            .ytp-preview-ad {
+                display: none !important;
+            }
+
+            /* Убираем информационные панели о рекламе */
+            .ytp-ad-info-dialog,
+            .ytp-ad-info-hover-text-button {
+                display: none !important;
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    };
+
+    // ==========================================
+    // 8. МОНИТОРИНГ DOM И СБРОС ТАЙМЕРОВ
+    // ==========================================
+    const startMonitoring = () => {
+        // MutationObserver для динамически подгружаемых рекламных элементов
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length) {
+                    forceVideoMode();
+                    break;
+                }
+            }
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+
+        // Периодическая проверка (страховка от пропущенных случаев)
+        setInterval(forceVideoMode, 500);
+    };
+
+    // ==========================================
+    // ИНИЦИАЛИЗАЦИЯ
+    // ==========================================
+    const init = () => {
+        try {
+            defuseGlobalAPI();
+            bypassAntiAdblock();
+            blindViewability();
+            fastPassAdsFlow();
+            muteNetworkPings();
+            injectStyles();
+            startMonitoring();
+            forceVideoMode(); // Немедленная попытка выхода из рекламы
+
+            console.debug('[YT-AdBlock] Initialized successfully');
+        } catch (e) {
+            console.error('[YT-AdBlock] Initialization error:', e);
+        }
+    };
+
+    // Запуск на всех этапах загрузки страницы
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        init();
+    }
+
+    // Дополнительный запуск после полной загрузки (ловим отложенные скрипты)
+    window.addEventListener('load', init, { once: true });
+
 })();
